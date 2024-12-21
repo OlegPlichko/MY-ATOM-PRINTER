@@ -40,9 +40,9 @@ bool mqttConnect(String _mqtt_broker, int _mqtt_port, String _mqtt_id,
             Serial.println("MQTT Connected!");
             is_conneced = true;
             Serial.println(F(" success"));
-            printer.printASCII(F("successfully connect to UIFLOW"));
+            //#savepaper printer.printASCII(F("successfully connect to UIFLOW"));
             printer.newLine(3);
-            printer.printASCII("subscribe: " + mqtt_topic);
+            //#savepaper printer.printASCII("subscribe: " + mqtt_topic);
             Serial.println("subscribe: " + mqtt_topic);
             mqttClient.subscribe(mqtt_topic.c_str());
             break;

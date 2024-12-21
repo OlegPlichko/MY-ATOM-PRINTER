@@ -6,6 +6,7 @@
 #include "ATOM_PRINTER_MQTT.h"
 #include <Preferences.h>
 #include <ArduinoJson.h>
+#include <sstream>
 
 extern Preferences preferences;
 extern ATOM_PRINTER printer;
@@ -14,7 +15,7 @@ extern WebServer webServer;
 extern DNSServer dnsServer;
 extern DynamicJsonDocument payload;
 extern String mqtt_topic;
-extern uint8_t bmp_buffer[BMP_BUFFER_LIMIT];
+extern long bmp_buffer[BMP_BUFFER_LIMIT_LONG];
 extern int bmp_data_offset;
 extern int bmp_data_size;
 extern int bmp_width;
@@ -144,6 +145,23 @@ void handleMQTTConfig() {
     xSemaphoreGive(xMQTTMutex);
 }
 
+/*
+void Print_BMP(int width, int height, const unsigned char *data, int mode, int wait) {
+    printer._serial->write(0x1D);
+    printer._serial->write(0x76);
+    printer._serial->write(0x30);                      // 0
+    printer._serial->write(mode);                      // m
+    printer._serial->write((width / 8) & 0xff);        // xL
+    printer._serial->write((width / 256 / 8) & 0xff);  // xH
+    printer._serial->write((height) & 0xff);           // yL
+    printer._serial->write((height / 256) & 0xff);     // yH
+    for (int i = 0; i < (width / 8 * height); i++) {
+        printer._serial->write(data[i]);                 // data
+        delay(wait);
+    }
+}
+*/
+
 void handleBMPSize() {
     String message;
     for (uint8_t i = 0; i < webServer.args(); i++) {
@@ -157,28 +175,64 @@ void handleBMPSize() {
     bmp_height     = obj[String("bmp_height")];
     Serial.println("BMP width: " + String(bmp_width));
     Serial.println("BMP height: " + String(bmp_height));
+    for (int i =0; i < sizeof(obj[String("bmp")].as<JsonArray>()); i++) {
+      Serial.printf("0x%02X,", obj[String("bmp")].as<JsonArray>()[i]);
+    }
     Serial.println();
     webServer.send(200, "text/html", "OK");
 }
+// 'printing_200_inv', 200x50px
+unsigned char epd_bitmap_printing_200_inv [] = {
+0x00, 0x00, 0x00, 0x00, 0x03, 0xff, 0xff, 0xc0, 0x07, 0xff, 0xff, 0xe0, 0x07, 0xff, 0xff, 0xe0, 
+0x07, 0x00, 0x00, 0xe0, 0x07, 0x00, 0x00, 0xe0, 0x07, 0x00, 0x00, 0xe0, 0x07, 0x00, 0x00, 0xe0, 
+0x7f, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x3f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
+0xff, 0x00, 0x00, 0xff, 0xff, 0x1f, 0xf8, 0xff, 0xff, 0x3f, 0xfc, 0xff, 0xff, 0x3f, 0xfc, 0xff, 
+0x07, 0x00, 0x00, 0xe0, 0x07, 0x3f, 0xfc, 0xe0, 0x07, 0x3f, 0xfc, 0xe0, 0x07, 0x0f, 0xf0, 0xe0, 
+0x07, 0xff, 0xff, 0xe0, 0x07, 0xff, 0xff, 0xe0, 0x03, 0xff, 0xff, 0xc0, 0x00, 0x00, 0x00, 0x00
+};
+
+// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 5024)
+const int epd_bitmap_allArray_LEN = 1;
+const unsigned char* epd_bitmap_allArray[1] = {
+	epd_bitmap_printing_200_inv
+};
+
+
+
+void handleTestBMP() {
+    printer.printBMP(0, 32, 32, epd_bitmap_printing_200_inv);
+    //Print_BMP(32, 32, epd_bitmap_printing_200_inv, 0, 10);
+}
 
 void handleBMP() {
-    HTTPUpload& upload = webServer.upload();
-    if (upload.status == UPLOAD_FILE_START) {
-        String filename = upload.filename;
-        Serial.print("handleFileUpload Name: ");
-        Serial.println(filename);
-        bmp_data_offset = 0;
-    } else if (upload.status == UPLOAD_FILE_WRITE) {
-        Serial.print("handleFileUpload Size: ");
-        Serial.println(upload.currentSize);
-        size_t size = upload.currentSize;
-        memcpy(bmp_buffer + bmp_data_offset, upload.buf, size);
-        bmp_data_offset += size;
-    } else if (upload.status == UPLOAD_FILE_END) {
-        Serial.print("handleFileUpload totalSize: ");
-        Serial.println(upload.totalSize);
-        bmp_data_size = upload.totalSize;
-        printer.printBMP(0, bmp_width, bmp_height, bmp_buffer);
+    try {
+      HTTPUpload& upload = webServer.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+          String filename = upload.filename;
+          Serial.print("handleFileUpload Name: ");
+          Serial.println(filename);
+          bmp_data_offset = 0;
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+          Serial.print("handleFileUpload Size: ");
+          Serial.println(upload.currentSize);
+          size_t size = upload.currentSize;
+          memcpy(bmp_buffer + bmp_data_offset, upload.buf, size);
+          bmp_data_offset += size;
+      } else if (upload.status == UPLOAD_FILE_END) {
+          Serial.print("handleFileUpload totalSize: ");
+          Serial.println(upload.totalSize);
+          bmp_data_size = upload.totalSize;
+          Serial.println("bmp_buffer: ");
+          for(int i = 0; i < sizeof(bmp_buffer); i++) {
+            Serial.printf("0x%02X,", bmp_buffer[i]);
+          }
+          //printer.printBMP(0, 32, 32, bmp_buffer);
+      }
+    }
+    catch (...) {
+      webServer.send(200, "text/html", "ERROR");
     }
 }
 
@@ -221,9 +275,9 @@ void webServerInit() {
     webServer.on("/wifi_config", HTTP_POST, handleWiFiConfig);
     webServer.on("/mqtt_config", HTTP_GET, handleMQTTConfig);
     webServer.on("/device_status", HTTP_GET, handleStatusConfig);
-    // webServer.on(
-    //     "/bmp", HTTP_POST, []() { webServer.send(200, "text/plain", "OK"); },
-    //     handleBMP);
+    webServer.on("/bmpsize", HTTP_POST, handleBMPSize);
+    webServer.on("/bmp", HTTP_POST, []() { webServer.send(200, "text/plain", "OK"); }, handleBMP);
+    webServer.on("/testbmp", HTTP_GET, handleTestBMP);
     webServer.begin();
     Serial.println("HTTP server started");
     Serial.println(
